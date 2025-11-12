@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>🌍 EarthSense 360 — Global Disaster Monitoring</title>
+
+<!-- ArcGIS JS API -->
+<link rel="stylesheet" href="https://js.arcgis.com/4.30/esri/themes/dark/main.css" />
+<script src="https://js.arcgis.com/4.30/"></script>
+
+<style>
+  html, body, #viewDiv {
+    height: 100%; width: 100%;
+    margin: 0; padding: 0;
+    overflow: hidden;
+    background: #000;
+    font-family: "Segoe UI", sans-serif;
+  }
+
+  #panel, #legend {
+    position: absolute; z-index: 99;
+    background: rgba(10,10,10,0.75);
+    border-radius: 12px;
+    padding: 14px;
+    color: #fff;
+    backdrop-filter: blur(8px);
+    box-shadow: 0 0 15px rgba(0,0,0,0.6);
+  }
+
+  #panel {
+    top: 10px; left: 10px;
+    width: 250px;
+  }
+  #legend {
+    top: 10px; right: 10px;
+    width: 160px;
+    font-size: 13px;
+  }
+
+  button {
+    width: 100%; margin: 5px 0; padding: 8px;
+    border: none; border-radius: 8px;
+    background: linear-gradient(90deg,#222,#444);
+    color: white; cursor: pointer; font-weight: 500;
+    font-size: 14px;
+  }
+  button:hover { background: linear-gradient(90deg,#444,#666); transform: scale(1.02); }
+
+  h3 { margin-top: 0; font-size: 18px; }
+
+  /* Watermark Styling */
+  .watermark {
+    position: fixed;
+    bottom: 20px;
+    right: 30px;
+    font-size: 22px;
+    color: rgba(255, 255, 255, 0.15);
+    font-weight: 800;
+    z-index: 5;
+    user-select: none;
+    pointer-events: none;
+    animation: fade 4s infinite alternate ease-in-out;
+    letter-spacing: 2px;
+  }
+
+  @keyframes fade {
+    from { opacity: 0.2; transform: scale(1); }
+    to { opacity: 0.5; transform: scale(1.05); }
+  }
+
+  /* 📱 Mobile Responsiveness */
+  @media (max-width: 768px) {
+    #panel, #legend {
+      width: 85%;
+      left: 7%;
+      right: auto;
+      top: 10px;
+      font-size: 13px;
+    }
+    #legend {
+      top: auto; bottom: 10px; width: 70%;
+    }
+    h3 { text-align: center; }
+    button { font-size: 13px; }
+    .watermark {
+      font-size: 18px;
+      bottom: 10px;
+      right: 10px;
+    }
+  }
+</style>
+</head>
+
+<body>
+<div id="viewDiv"></div>
+
+<!-- Watermark -->
+<div class="watermark">GROUP - 12</div>
+
+<!-- Control Panel -->
+<div id="panel">
+  <h3>🌍 EarthSense 360</h3>
+  <button id="btnIndia">Center India</button>
+  <button id="btnBase">🗺 Toggle Street/Satellite</button>
+  <hr>
+  <button id="btnQuake">🌋 Earthquakes</button>
+  <button id="btnFlood">🌊 Floods</button>
+  <button id="btnCyclone">🌀 Cyclones</button>
+  <button id="btnLandslide">🏔 Landslides</button>
+  <button id="btnFire">🔥 Wildfires</button>
+  <button id="btnRain">🌧 Rainfall</button>
+  <hr>
+  <button id="btnLocation">📍 My Location</button>
+</div>
+
+<!-- Legend -->
+<div id="legend">
+  <b>Legend</b><br>
+  🔴 Earthquake<br>
+  🟦 Flood<br>
+  🌀 Cyclone<br>
+  🟢 Landslide<br>
+  🔥 Wildfire<br>
+  🌧 Rainfall
+</div>
+
+<script>
+require([
+  "esri/Map","esri/views/SceneView",
+  "esri/Graphic","esri/geometry/Point",
+  "esri/layers/GraphicsLayer"
+], function(Map, SceneView, Graphic, Point, GraphicsLayer){
+
+  const map = new Map({ basemap: "satellite", ground: "world-elevation" });
+  const view = new SceneView({
+    container: "viewDiv",
+    map,
+    camera: { position:{x:82.8,y:22,z:15000000}, tilt:0 },
+    environment:{ starsEnabled:true, atmosphereEnabled:true }
+  });
+
+  const L = {
+    quake:new GraphicsLayer(),
+    flood:new GraphicsLayer(),
+    cyclone:new GraphicsLayer(),
+    landslide:new GraphicsLayer(),
+    fire:new GraphicsLayer(),
+    rain:new GraphicsLayer(),
+    location:new GraphicsLayer()
+  };
+  map.addMany(Object.values(L));
+
+  async function fetchJSON(url){
+    try{const r=await fetch(url);return await r.json();}catch(e){console.warn("Fail:",url);return null;}
+  }
+
+  // === EARTHQUAKES ===
+  async function showQuakes(){
+    L.quake.removeAll();
+    const data=await fetchJSON("https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_day.geojson");
+    if(!data?.features)return;
+    data.features.forEach(f=>{
+      const [lon,lat]=f.geometry.coordinates;
+      const mag=f.properties.mag||0;
+      L.quake.add(new Graphic({
+        geometry:new Point({longitude:lon,latitude:lat}),
+        symbol:{type:"simple-marker",color:[255,60,60,0.9],size:6+mag*2},
+        popupTemplate:{title:"🌋 Earthquake",content:`${f.properties.place}<br><b>Magnitude:</b> ${mag}`}
+      }));
+    });
+  }
+
+  // === FLOODS ===
+  async function showFloods(){
+    L.flood.removeAll();
+    const data=await fetchJSON("https://data.opendatasoft.com/api/explore/v2.1/catalog/datasets/global-flood-database/records?limit=100");
+    if(!data?.results)return;
+    data.results.forEach(f=>{
+      if(!f.latitude||!f.longitude)return;
+      L.flood.add(new Graphic({
+        geometry:new Point({longitude:f.longitude,latitude:f.latitude}),
+        symbol:{type:"simple-marker",color:[0,150,255,0.8],size:10},
+        popupTemplate:{title:"🌊 Flood",content:`${f.country||""}<br>${f.startdate||""}`}
+      }));
+    });
+  }
+
+  // === CYCLONES ===
+  async function showCyclones(){
+    L.cyclone.removeAll();
+    const storms=[
+      {name:"Remal",lat:21.5,lon:89.2,wind:120},
+      {name:"Mocha",lat:18.3,lon:92.1,wind:130},
+      {name:"Midhili",lat:16.7,lon:87.3,wind:110}
+    ];
+    storms.forEach(s=>{
+      L.cyclone.add(new Graphic({
+        geometry:new Point({longitude:s.lon,latitude:s.lat}),
+        symbol:{type:"simple-marker",color:[0,255,255,0.9],size:12},
+        popupTemplate:{title:`🌀 ${s.name}`,content:`Wind Speed: ${s.wind} km/h`}
+      }));
+    });
+  }
+
+  // === LANDSLIDES ===
+  async function showLandslides(){
+    L.landslide.removeAll();
+    const data=await fetchJSON("https://data.nasa.gov/resource/h9gi-nx95.json?$limit=200");
+    if(!data)return;
+    data.forEach(d=>{
+      const lat=+d.latitude,lon=+d.longitude;
+      if(!lat||!lon)return;
+      L.landslide.add(new Graphic({
+        geometry:new Point({longitude:lon,latitude:lat}),
+        symbol:{type:"simple-marker",color:[0,255,100,0.8],size:8},
+        popupTemplate:{title:"🏔 Landslide",content:`${d.event_date||""}<br>${d.country_name||""}`}
+      }));
+    });
+  }
+
+  // === WILDFIRES ===
+  async function showFires(){
+    L.fire.removeAll();
+    const data=await fetchJSON("https://eonet.gsfc.nasa.gov/api/v3/events?category=wildfires");
+    if(!data?.events)return;
+    data.events.slice(0,100).forEach(e=>{
+      const coords=e.geometry[0]?.coordinates;
+      if(!coords)return;
+      L.fire.add(new Graphic({
+        geometry:new Point({longitude:coords[0],latitude:coords[1]}),
+        symbol:{type:"simple-marker",color:[255,120,0,0.9],size:10},
+        popupTemplate:{title:"🔥 Wildfire",content:`${e.title}`}
+      }));
+    });
+  }
+
+  // === RAINFALL ===
+  async function showRain(){
+    L.rain.removeAll();
+    const cities=[[72.8,18.9],[77.2,28.6],[88.3,22.6],[80.2,13.1]];
+    for(const [lon,lat] of cities){
+      const d=await fetchJSON(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&daily=precipitation_sum&forecast_days=7&timezone=auto`);
+      if(!d?.daily)continue;
+      const sum=d.daily.precipitation_sum.reduce((a,b)=>a+b,0);
+      if(sum>20){
+        L.rain.add(new Graphic({
+          geometry:new Point({longitude:lon,latitude:lat}),
+          symbol:{type:"simple-marker",color:[0,100,255,0.9],size:8+(sum/10)},
+          popupTemplate:{title:"🌧 Heavy Rain",content:`7-day total: ${sum.toFixed(1)} mm`}
+        }));
+      }
+    }
+  }
+
+  // === SHOW LIVE USER LOCATION ===
+  async function showMyLocation(){
+    L.location.removeAll();
+    if (!navigator.geolocation) {
+      alert("Geolocation not supported on this device.");
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(pos => {
+      const lat = pos.coords.latitude;
+      const lon = pos.coords.longitude;
+      const userPoint = new Point({ latitude: lat, longitude: lon });
+      const symbol = {
+        type: "picture-marker",
+        url: "https://cdn-icons-png.flaticon.com/512/64/64113.png",
+        width: "28px",
+        height: "28px"
+      };
+      const graphic = new Graphic({
+        geometry: userPoint,
+        symbol,
+        popupTemplate: {
+          title: "📍 Your Location",
+          content: `Latitude: ${lat.toFixed(3)}<br>Longitude: ${lon.toFixed(3)}`
+        }
+      });
+      L.location.add(graphic);
+      view.goTo({ center: [lon, lat], zoom: 6 });
+    }, () => alert("Unable to get location. Check permissions."));
+  }
+
+  // === WEATHER CLICK ===
+  view.on("click", async ev=>{
+    const p=view.toMap(ev);
+    const lat=p.latitude.toFixed(2),lon=p.longitude.toFixed(2);
+    const w=await fetchJSON(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true`);
+    const c=w?.current_weather;
+    view.popup.open({
+      location:p,
+      title:"🌤 Weather",
+      content:c?`Temperature: ${c.temperature}°C<br>Wind: ${c.windspeed} m/s`:"No data"
+    });
+  });
+
+  // === BUTTON ACTIONS ===
+  document.getElementById("btnIndia").onclick=()=>view.goTo({center:[82.8,22],zoom:5});
+  document.getElementById("btnBase").onclick=()=>map.basemap = (map.basemap==="satellite"?"streets-navigation-vector":"satellite");
+  document.getElementById("btnQuake").onclick=showQuakes;
+  document.getElementById("btnFlood").onclick=showFloods;
+  document.getElementById("btnCyclone").onclick=showCyclones;
+  document.getElementById("btnLandslide").onclick=showLandslides;
+  document.getElementById("btnFire").onclick=showFires;
+  document.getElementById("btnRain").onclick=showRain;
+  document.getElementById("btnLocation").onclick=showMyLocation;
+
+  view.when(()=>view.goTo({center:[82.8,22],zoom:4}));
+});
+</script>
+</body>
+</html>
